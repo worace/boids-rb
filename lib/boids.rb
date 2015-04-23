@@ -1,18 +1,17 @@
-require "securerandom"
+require "pry"
 load_library :vecmath
 def setup
   @bounds = Vec2D.new(800, 800)
-  # generate a few birds
   size @bounds.x, @bounds.y
-  @flock = Flock.new(10, rand(800), rand(800), @bounds)
+  @flock = Flock.new(50, rand(800), rand(800), @bounds)
   fill 255
 end
 
 def draw
   background 0
-  #@flock.birds.each do |b|
-    #b.steer(@flock.birds)
-  #end
+  @flock.birds.each do |b|
+    b.steer(@flock.birds)
+  end
   @flock.birds.each(&:draw)
 end
 
@@ -35,7 +34,7 @@ end
 # render itself -- generate a triangle pointing in the right direction
 # and at the right position -- maybe to start each bird is represented by a circle?
 class Bird
-  attr_reader :position, :velocity, :bounds
+  attr_reader :position, :velocity, :bounds, :acceleration
 
   def initialize(position, bounds)
     @acceleration = Vec2D.new(rand(100), rand(100))
@@ -46,32 +45,53 @@ class Bird
   end
 
   def neighbor_radius
-    30
+    60
+  end
+
+  def minimum_distance
+    20
   end
 
   def find_heading
   end
 
   def steer(flockmates)
-    too_close_neighbors = flockmates.select do |bird|
-      (bird.x - x).abs < neighbor_radius && (bird.y - y).abs < neighbor_radius
-    end.reject { |b| b.equal?(self) }
+    #binding.pry
+    neighbors = flockmates.reject do |b|
+      b.equal?(self)
+    end.select do |b|
+      b.position.dist(position) < neighbor_radius && b.acceleration.angle_between(acceleration).abs < 3
+    end
 
-    if too_close_neighbors.any?
-      avg = [too_close_neighbors.map(&:x).reduce(:+)/too_close_neighbors.count,
-             too_close_neighbors.map(&:y).reduce(:+)/too_close_neighbors.count]
-      puts avg
-    else
-      @velocity = velocity_toward(mouse_x, mouse_y)
+    if neighbors.any?
+      if neighbors.any? { |n| n.position.dist(position) < minimum_distance }
+        avg_heading = neighbors.map(&:acceleration).reduce(:+) / neighbors.count
+        #TODO - what's the right way to "steer toward" another bird's heading?
+        @acceleration = (acceleration - avg_heading) / 2
+        #if avg_heading.angle_between(acceleration) > 0
+          #@acceleration.rotate(-0.005)
+        #else
+          #@acceleration = @acceleration.rotate(0.005)
+        #end
+        #@acceleration = acceleration.rotate(-acceleration.angle_between(avg_heading)/2)
+      else
+        avg_heading = neighbors.map(&:acceleration).reduce(:+) / neighbors.count
+        @acceleration = (avg_heading + acceleration) / 2
+        #if avg_heading.angle_between(acceleration) > 0
+          #@acceleration.rotate(0.2)
+        #else
+          #@acceleration = @acceleration.rotate(-0.2)
+        #end
+        #puts "found neighbors moving toward: #{neighbors.map(&:acceleration)}"
+        #puts "averaged their positions to get #{avg_heading}"
+        #puts "rotate velocity 1/2 the dist; new pos vec: #{acceleration.copy.rotate(acceleration.angle_between(avg_heading)/2)}"
+        #@acceleration = acceleration.rotate(acceleration.angle_between(avg_heading)/2)
+      end
     end
   end
 
   def max_speed
-    5
-  end
-
-  def mouse_heading
-    Vec2D.new(mouse_x, mouse_y)
+    3
   end
 
   def wrap_if_out_of_bounds
@@ -98,6 +118,9 @@ class Bird
     @position = position + velocity
     wrap_if_out_of_bounds
     #puts "position is vec2d with x #{position.x}, y #{position.y}, heading #{position.heading}, magnitude #{position.mag}"
-    ellipse(@position.x, @position.y, 10, 10)
+    ellipse(position.x, position.y, 10, 10)
+    stroke 255, 60
+    stroke_weight 2
+    line(position.x, position.y, (position + acceleration).x, (position + acceleration).y)
   end
 end
