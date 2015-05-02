@@ -1,126 +1,92 @@
-require "pry"
-load_library :vecmath
 def setup
-  @bounds = Vec2D.new(800, 800)
-  size @bounds.x, @bounds.y
-  @flock = Flock.new(50, rand(800), rand(800), @bounds)
-  fill 255
+  size 800, 600
+  puts "calling setup on start"
+  # create some birds
+  @flock = (1..10).map { Bird.new(rand(800), rand(600))}
 end
+
 
 def draw
-  background 0
-  @flock.birds.each do |b|
-    b.steer(@flock.birds)
-  end
-  @flock.birds.each(&:draw)
+  background(255, 255, 255)
+  # address/update steering of each bird
+  # move each bird by its speed in the direction that it's heading
+  # draw each bird
+
+  #@flock.each { |b| puts "#{b} has #{b.neighbors(@flock).count} neighbors"}
+  @flock.each { |b| b.adjust_course(@flock) }
+  @flock.each { |b| b.move! }
+  @flock.each { |b| b.wrap!(width, height) }
+  @flock.each { |b| b.draw }
 end
 
-
-class Flock
-  attr_reader :birds
-  def initialize(bird_count, x, y, bounds)
-    @birds = Array.new(bird_count) { Bird.new(Vec2D.new(x + rand(-50..50), y + rand(-50..50)), bounds) }
-  end
-end
-
-# track position
-# heading
-# velocity/speed -- probably static
-# find their neighbors -- Birds do this or something else does it?
-# calculate new heading
-#    - steer to avoid neighbors
-#    - steer to average heading of neighbors
-#    - steer toward average position of neighbors
-# render itself -- generate a triangle pointing in the right direction
-# and at the right position -- maybe to start each bird is represented by a circle?
 class Bird
-  attr_reader :position, :velocity, :bounds, :acceleration
-
-  def initialize(position, bounds)
-    @acceleration = Vec2D.new(rand(100), rand(100))
-    @acceleration.set_mag(1)
-    @position = position
-    @bounds = bounds
-    @velocity = Vec2D.new
+  attr_reader :x, :y, :speed, :heading
+  def initialize(x,y)
+    @x = x
+    @y = y
+    @speed = 3
+    @heading = rand * TWO_PI
   end
 
-  def neighbor_radius
-    60
+  def x_offset
+    speed * cos(heading)
   end
 
-  def minimum_distance
-    20
+  def y_offset
+    speed * sin(heading)
   end
 
-  def find_heading
+  def move!
+    @x = x + x_offset
+    @y = y + y_offset
   end
 
-  def steer(flockmates)
-    #binding.pry
-    neighbors = flockmates.reject do |b|
-      b.equal?(self)
-    end.select do |b|
-      b.position.dist(position) < neighbor_radius && b.acceleration.angle_between(acceleration).abs < 3
-    end
+  def wrap!(width, height)
+    @x = x % width
+    @y = y % height
+  end
 
-    if neighbors.any?
-      if neighbors.any? { |n| n.position.dist(position) < minimum_distance }
-        avg_heading = neighbors.map(&:acceleration).reduce(:+) / neighbors.count
-        #TODO - what's the right way to "steer toward" another bird's heading?
-        @acceleration = (acceleration - avg_heading) / 2
-        #if avg_heading.angle_between(acceleration) > 0
-          #@acceleration.rotate(-0.005)
-        #else
-          #@acceleration = @acceleration.rotate(0.005)
-        #end
-        #@acceleration = acceleration.rotate(-acceleration.angle_between(avg_heading)/2)
-      else
-        avg_heading = neighbors.map(&:acceleration).reduce(:+) / neighbors.count
-        @acceleration = (avg_heading + acceleration) / 2
-        #if avg_heading.angle_between(acceleration) > 0
-          #@acceleration.rotate(0.2)
-        #else
-          #@acceleration = @acceleration.rotate(-0.2)
-        #end
-        #puts "found neighbors moving toward: #{neighbors.map(&:acceleration)}"
-        #puts "averaged their positions to get #{avg_heading}"
-        #puts "rotate velocity 1/2 the dist; new pos vec: #{acceleration.copy.rotate(acceleration.angle_between(avg_heading)/2)}"
-        #@acceleration = acceleration.rotate(acceleration.angle_between(avg_heading)/2)
-      end
+  def neighbors(flock, radius = 60)
+    flock.select do |b|
+      d = dist(x, y, b.x, b.y)
+      d < radius && d > 0
     end
   end
 
-  def max_speed
-    3
+  def crowders(neighbors)
+    self.neighbors(neighbors, 50)
   end
 
-  def wrap_if_out_of_bounds
-    if position.x > bounds.x
-      position.x = 0
-    elsif position.x < 0
-      position.x = bounds.x
+  def adjust_course(flock)
+    crowders = crowders(flock)
+    if crowders.any?
+      avoid = crowders.min_by { |c| dist(x, y, c.x, c.y) }
+      puts "bird heading at #{heading} will steer to avoid #{avoid.heading}"
+      steer_from(avoid.heading)
     end
+    ensure_valid_heading!
+  end
 
-    if position.y > bounds.y
-      position.y = 0
-    elsif position.y < 0
-      position.y = bounds.y
+  def ensure_valid_heading!
+    @heading = @heading % TWO_PI
+  end
+
+  def steer_from(heading)
+    if self.heading < heading
+      @heading += QUARTER_PI
+    else
+      @heading -= QUARTER_PI
     end
   end
+  # give a bird an angle / heading
+  # tell it to "steer away from" that heading
+  # have it adjust its own heading
+  # if your heading is smaller than other bird's heading
+  #     -> add some angle
+  # else
+  #     -> sub some angle ?
 
   def draw
-    #accel = mouse_heading - position
-    #accel.set_mag(0.5)
-    @velocity += @acceleration
-    if velocity.mag > max_speed
-      velocity.set_mag(max_speed)
-    end
-    @position = position + velocity
-    wrap_if_out_of_bounds
-    #puts "position is vec2d with x #{position.x}, y #{position.y}, heading #{position.heading}, magnitude #{position.mag}"
-    ellipse(position.x, position.y, 10, 10)
-    stroke 255, 60
-    stroke_weight 2
-    line(position.x, position.y, (position + acceleration).x, (position + acceleration).y)
+    ellipse(x, y, 20, 20)
   end
 end
